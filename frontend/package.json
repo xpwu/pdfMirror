@@ -12,11 +12,11 @@
     "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-		"ts-concurrency": "git+https://github.com/xpwu/ts-concurrency.git#semver:^0.3.0",
-		"ts-nc": "git+https://github.com/xpwu/ts-nc.git#semver:^1.2.0",
-		"ts-x": "git+https://github.com/xpwu/ts-x.git#semver:^0.5.2",
-		"ts-json": "git+https://github.com/xpwu/ts-json.git#semver:^0.4.1",
-		"ts-streamclient": "git+https://github.com/xpwu/ts-streamclient.git#semver:^2.2.1"
+		"ts-concurrency": "git+https://github.com/xpwu/ts-concurrency.git#semver:^0.3",
+		"ts-nc": "git+https://github.com/xpwu/ts-nc.git#semver:^1.2",
+		"ts-x": "git+https://github.com/xpwu/ts-x.git#semver:^0.5",
+		"ts-json": "git+https://github.com/xpwu/ts-json.git#semver:^0.4",
+		"ts-streamclient": "git+https://github.com/xpwu/ts-streamclient.git#semver:^2.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
