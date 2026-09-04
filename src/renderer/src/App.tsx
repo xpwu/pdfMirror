@@ -5,7 +5,7 @@ import { GetWorkspaces } from "@/db/workspace"
 import { WorkspaceTree } from "@/api/tree"
 import { GetTree } from "@/db/tree"
 
-import { FileURL } from "../../shared/channels"
+import PdfView from "@/components/PdfView";
 import { TreeNode, WorkspaceState } from "../../shared/types"
 
 
@@ -152,21 +152,11 @@ export default function App() {
 			</aside>
 
 			{/* ── 中栏：原文 PDF ── */}
-			<section className="flex-1 min-w-0 overflow-y-auto p-4">
-				{curPaper === null && (
-					<p className="text-xs opacity-60">请从左侧选择一篇论文</p>
-				)}
-
-				{curPaper !== null && (
-					<div className="flex flex-col gap-1">
-						<div className="font-semibold">{curPaper.Name}</div>
-						<div className="text-xs opacity-60 break-all">
-							{FileURL(sourcePath)}
-						</div>
-						<div className="mt-4 text-xs opacity-60">
-							PDF 渲染待接入（pdf.js）
-						</div>
-					</div>
+			<section className="flex-1 min-w-0 overflow-hidden">
+				{curPaper === null ? (
+					<p className="text-xs opacity-60 p-4">请从左侧选择一篇论文</p>
+				) : (
+					<PdfView absPath={sourcePath} />
 				)}
 			</section>
 

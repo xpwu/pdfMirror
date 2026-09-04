@@ -1,61 +1,11 @@
-import { app, BrowserWindow, protocol, net } from "electron"
+import { app, BrowserWindow } from "electron"
 import { electronApp, optimizer, is } from "@electron-toolkit/utils"
 import path from "node:path"
 
-import { FILE_SCHEME, FILE_HOST } from "../shared/channels"
 import { PathGuard } from "./service/pathGuard"
 import { LoadWorkspaces } from "./service/workspace"
 import { Register as RegisterWorkspaceIPC } from "./ipc/workspace"
-
-
-// pm:// 必须注册为 standard scheme，否则渲染进程的 fetch 无法使用它。
-//
-// 这一步必须在 app 的 ready 事件之前调用 —— 放在 whenReady 里会失效。
-protocol.registerSchemesAsPrivileged([
-	{
-		scheme: FILE_SCHEME,
-		privileges: {
-			standard: true,
-			secure: true,
-			supportFetchAPI: true,
-			bypassCSP: true
-		}
-	}
-])
-
-
-// registerFileProtocol 注册 pm:// 协议，供渲染进程读取本地文件。
-//
-// 所有请求都要先过 PathGuard，这是本地文件访问的唯一入口。
-// 透传 method 与 headers 是为了支持 Range 请求 ——
-// PDF.js 加载大 PDF 时必须靠分片加载，没有 Range 会退化为整体下载。
-function registerFileProtocol(guard: PathGuard): void {
-	protocol.handle(FILE_SCHEME, (request) => {
-		const url = new URL(request.url)
-
-		// host 只用于构造合法 URL，真实路径全在 pathname 里
-		if (url.host !== FILE_HOST) {
-			return new Response("未知的协议 host", { status: 400 })
-		}
-
-		let filePath: string
-		try {
-			filePath = decodeURIComponent(url.pathname)
-		} catch {
-			return new Response("路径编码非法", { status: 400 })
-		}
-
-		const err = guard.Check(filePath)
-		if (err !== null) {
-			return new Response(err, { status: 403 })
-		}
-
-		return net.fetch(`file://${encodeURI(filePath)}`, {
-			method: request.method,
-			headers: request.headers
-		})
-	})
-}
+import { Register as RegisterFileIPC } from "./ipc/file"
 
 
 function createWindow(): void {
@@ -98,11 +48,13 @@ function killChildren(): void {
 app.whenReady().then(() => {
 	electronApp.setAppUserModelId("com.pdfmirror")
 
+	// PathGuard 是所有本地文件访问的安全边界，铁律 L1/L2/L3 全部落在它身上。
+	// 此处统一载入工作区配置，后续各 IPC handler 直接复用。
 	const guard = new PathGuard()
 	guard.Load(LoadWorkspaces())
 
-	registerFileProtocol(guard)
 	RegisterWorkspaceIPC(guard)
+	RegisterFileIPC(guard)
 
 	app.on("browser-window-created", (_, window) => {
 		optimizer.watchWindowShortcuts(window)

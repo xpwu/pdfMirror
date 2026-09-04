@@ -5,15 +5,19 @@ export const CH = {
 	WorkspaceList: "workspace:list",
 
 	// 某个工作区的英文根目录树
-	WorkspaceTree: "workspace:tree"
+	WorkspaceTree: "workspace:tree",
+
+	// 读取本地文件的字节内容
+	FileRead: "file:read"
 } as const
 
 
 // 文件协议名。
 //
-// 渲染进程通过 fetch(`pm://local/<编码后的绝对路径>`) 读取本地文件。
-// 大文件（PDF / 译文 MD / blocks JSON）必须走这里，不走 IPC：
-// IPC 有结构化克隆的序列化开销，大内容会明显卡顿。
+// 大文件（PDF / 译文 MD / blocks JSON）不走 IPC 以外的通道。
+// 当前实现改用 IPC 直传字节：dev 模式下渲染进程 origin 是
+// http://localhost:5173，自定义协议 pm:// 属跨源，会引入 CORS 问题。
+// 且调用方本就整文件读取，Range 分片没有收益，故没有保留协议的必要。
 export const FILE_SCHEME = "pm"
 
 // 协议 host，无实际含义，仅用于构造合法的 URL
@@ -22,8 +26,14 @@ export const FILE_HOST = "local"
 
 // FileURL 把本地绝对路径构造成可被 fetch 的 URL。
 //
-// 路径整体编码（含分隔符）后作为 pathname，
-// 主进程侧 decodeURIComponent 一次即可还原。
+// 必须逐段编码再拼回：若对整条路径做 encodeURIComponent，
+// 分隔符 "/" 也会被编码成 %2F，host 与 path 之间没有分界，
+// 浏览器会报 "Failed to parse URL"。
 export function FileURL(absPath: string): string {
-	return `${FILE_SCHEME}://${FILE_HOST}${encodeURIComponent(absPath)}`
+	const encoded = absPath
+		.split("/")
+		.map((seg) => encodeURIComponent(seg))
+		.join("/")
+
+	return `${FILE_SCHEME}://${FILE_HOST}${encoded}`
 }
