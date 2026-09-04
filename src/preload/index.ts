@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from "electron"
 import { electronAPI } from "@electron-toolkit/preload"
 
 import { CH, FileURL } from "../shared/channels"
-import { IPCResult, WorkspaceState } from "../shared/types"
+import { IPCResult, TreeNode, WorkspaceState } from "../shared/types"
 
 
 // 暴露给渲染进程的能力白名单。
@@ -13,6 +13,10 @@ const api = {
 	// 工作区列表，含中文根懒校验结果
 	WorkspaceList: (): Promise<IPCResult<WorkspaceState[]>> =>
 		ipcRenderer.invoke(CH.WorkspaceList),
+
+	// 英文根目录树
+	WorkspaceTree: (sourceRoot: string): Promise<IPCResult<TreeNode[]>> =>
+		ipcRenderer.invoke(CH.WorkspaceTree, sourceRoot),
 
 	// 把本地绝对路径转成可 fetch 的 URL（走 pm:// 协议，不经 IPC）
 	FileURL: (absPath: string): string => FileURL(absPath)

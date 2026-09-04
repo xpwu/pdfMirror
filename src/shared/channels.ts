@@ -2,7 +2,10 @@
 
 export const CH = {
 	// 工作区列表（含中文根懒校验结果）
-	WorkspaceList: "workspace:list"
+	WorkspaceList: "workspace:list",
+
+	// 某个工作区的英文根目录树
+	WorkspaceTree: "workspace:tree"
 } as const
 
 

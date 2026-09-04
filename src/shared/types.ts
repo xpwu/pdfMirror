@@ -35,3 +35,26 @@ export class WorkspaceState {
 	// 程序绝不自动创建 —— 这是铁律 L2。
 	TranslatedExists: boolean = false
 }
+
+
+// 目录树节点。
+//
+// IsDir 为 true 时 Children 非空；为 false 时是 PDF 文件。
+export class TreeNode {
+	// 目录名或文件名（含扩展名）
+	Name: string = ""
+
+	// 相对英文根的路径，如 "nlp/bert.pdf"。
+	// 同时作为前端的 key，以及构造译文路径的依据。
+	Rel: string = ""
+
+	IsDir: boolean = false
+
+	// 是否已有译文。仅对 PDF 有意义，目录恒为 false。
+	//
+	// 判定依据：中文根 + Rel 去掉扩展名 的目录是否存在。
+	// 对应目录镜像规则 source/foo.pdf <-> translated/foo/
+	HasTranslated: boolean = false
+
+	Children: TreeNode[] = []
+}
