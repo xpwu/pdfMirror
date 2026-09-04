@@ -8,6 +8,16 @@ import { Register as RegisterWorkspaceIPC } from "./ipc/workspace"
 import { Register as RegisterFileIPC } from "./ipc/file"
 
 
+// 向渲染进程暴露 gc()。
+//
+// 判断内存是否真回落，必须能主动触发 GC：
+// Chromium 的 GC 是惰性的，不触发时 JS 堆里混着可回收的垃圾，
+// 无法区分「泄漏」与「尚未回收」。
+//
+// 必须在 app ready 之前调用。
+app.commandLine.appendSwitch("js-flags", "--expose-gc")
+
+
 function createWindow(): void {
 	const mainWindow = new BrowserWindow({
 		width: 1400,
@@ -25,6 +35,15 @@ function createWindow(): void {
 
 	mainWindow.on("ready-to-show", () => {
 		mainWindow.show()
+
+		// dev 下自动打开 DevTools。
+		//
+		// macOS 上 F12 默认映射为音量键（需 Fn+F12），
+		// 且 Cmd+Opt+I 要应用定义菜单才生效 —— 与其依赖快捷键，
+		// 不如直接打开。调试完可把这里注掉。
+		if (is.dev && !mainWindow.webContents.isDevToolsOpened()) {
+			mainWindow.webContents.openDevTools({ mode: "bottom" })
+		}
 	})
 
 	if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {

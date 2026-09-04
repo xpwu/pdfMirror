@@ -5,6 +5,26 @@ import { CH } from "../shared/channels"
 import { IPCResult, TreeNode, WorkspaceState } from "../shared/types"
 
 
+// 触发 V8 垃圾回收。
+//
+// 需要主进程以 --js-flags=--expose-gc 启动才可用。
+// 返回是否真的执行了 —— 调用方据此决定是否提示用户。
+function gc(): boolean {
+	const g = (globalThis as { gc?: () => void }).gc
+
+	if (typeof g !== "function") {
+		return false
+	}
+
+	try {
+		g()
+		return true
+	} catch {
+		return false
+	}
+}
+
+
 // 暴露给渲染进程的能力白名单。
 //
 // 按「能力」而非「数据」暴露：不开 fs.readFile 之类的通用口子，
@@ -22,7 +42,10 @@ const api = {
 
 	// 读取工作区内的文件字节（走 IPC，不经自定义协议）
 	ReadFile: (absPath: string): Promise<IPCResult<Uint8Array>> =>
-		ipcRenderer.invoke(CH.FileRead, absPath)
+		ipcRenderer.invoke(CH.FileRead, absPath),
+
+	// 触发 V8 GC（调试用）
+	GC: (): boolean => gc()
 }
 
 export type API = typeof api

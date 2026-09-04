@@ -3,6 +3,7 @@ import type * as pdfjs from "pdfjs-dist"
 
 import { ReadFile } from "@/api/file"
 import { OpenDocument } from "@/lib/pdfLoader"
+import { TrackPage, UntrackAll, UntrackPage } from "@/lib/bitmapMem"
 
 
 const DEFAULT_SCALE = 1.25
@@ -12,6 +13,7 @@ const PAGE_GAP = 16
 const BUFFER_PAGES = 2
 const KEEP_MARGIN = 4
 
+// 定位完问题后把这里改为 false 即可关闭日志
 const DEBUG = true
 
 function log(msg: string): void {
@@ -97,6 +99,9 @@ export default function PdfView({ absPath }: { absPath: string }) {
 		}
 
 		renderedRef.current.clear()
+		UntrackAll()
+
+		log(`releaseAll：位图归零，剩余 ${document.querySelectorAll("canvas").length} 个 canvas`)
 	}, [])
 
 
@@ -122,6 +127,7 @@ export default function PdfView({ absPath }: { absPath: string }) {
 		}
 
 		renderedRef.current.delete(i)
+		UntrackPage(i)
 	}, [])
 
 
@@ -144,6 +150,8 @@ export default function PdfView({ absPath }: { absPath: string }) {
 					return
 				}
 
+				// 位图按 devicePixelRatio 放大绘制，再用 CSS 尺寸缩回逻辑像素。
+				// 否则 Retina 屏上一个逻辑像素只对应一个位图像素，文字发虚。
 				const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR)
 				const viewport = page.getViewport({ scale: scale * dpr })
 
@@ -170,6 +178,11 @@ export default function PdfView({ absPath }: { absPath: string }) {
 				wrapper.textContent = ""
 				wrapper.appendChild(canvas)
 
+				// 记账：这一页的位图字节。
+				// 位图内存不在 JS 堆里，只能自己记，
+				// 销毁时由 destroyPage / releaseAll 扣减。
+				TrackPage(i, canvas.width * canvas.height * 4)
+
 				const ctx = canvas.getContext("2d")
 				if (ctx === null) {
 					page.cleanup()
@@ -185,7 +198,7 @@ export default function PdfView({ absPath }: { absPath: string }) {
 				page.cleanup()
 
 				// 渲染完成时文档可能已切换，此时不能标记为已渲染，
-				// 否则新的文档会误认为这些页已经画好
+				// 否则新文档会误认为这些页已经画好
 				if (genRef.current === gen && docRef.current === d) {
 					renderedRef.current.add(i)
 				}

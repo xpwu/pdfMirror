@@ -5,7 +5,8 @@ import { GetWorkspaces } from "@/db/workspace"
 import { WorkspaceTree } from "@/api/tree"
 import { GetTree } from "@/db/tree"
 
-import PdfView from "@/components/PdfView";
+import PdfView from "@/components/PdfView"
+import MemoryBar from "@/components/MemoryBar";
 import { TreeNode, WorkspaceState } from "../../shared/types"
 
 
@@ -96,6 +97,7 @@ export default function App() {
 
 	return (
 		<div className="flex h-screen text-sm">
+			<MemoryBar />
 			{/* ── 左栏：目录 / 文件树 ── */}
 			<aside className="w-64 shrink-0 border-r overflow-y-auto p-2">
 				<div className="font-semibold px-1 pb-2">工作区</div>
