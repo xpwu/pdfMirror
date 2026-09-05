@@ -16,7 +16,7 @@
 > | §7 | 后端设计（Go + HTTP API） | **主进程设计（Electron + IPC）** |
 > | §8 | 前端设计（Next.js 路由） | **渲染进程设计（React 单组件树）** |
 >
-> 新增：§4.5 切页兜底、§6.7 不联动模式、§9 AI 的边界。
+> 新增：§4.5 切页兜底、§6.7 不联动模式、§14 AI 的边界。
 
 ---
 
@@ -312,7 +312,7 @@ AI 翻译不可能覆盖所有情况。以下三条按「**先展示、再提示
 │                    │  └────────────────────────────────┘ │
 │  ▾ Transformer/    │                                    │
 │    📄 attention.pdf │   EN (左)        │  ZH (右)        │
-│    📁 sub_dir/      │  PDF(file://)   │  译文/流式/空态   │
+│    📁 sub_dir/      │  PDF(IPC)      │  译文/流式/空态   │
 │  ▾ NLP/             │                │                  │
 │                    │                │                  │
 └────────────────────┴────────────────┼──────────────────┘
@@ -458,7 +458,7 @@ value: "qwen2_5_7b"
 | 通道 | 职责 |
 |------|------|
 | `paper:versions` | 该论文所有版本列表（含状态与进度） |
-| `paper:content` | 取某版本的译文内容（含解析后的实际版本） |
+| `file:read` | 取译文内容 —— 译文就是普通 `.md` 文件，复用通用读文件通道 |
 
 **fallback 规则**（沿用 v1.0）
 
@@ -466,7 +466,7 @@ value: "qwen2_5_7b"
 - 指定版本但不存在 → fallback 到最新。
 - 未指定 → 取最新（含生成中的版本）。
 - 返回额外字段 `resolved_version` 与 `default_reason`（`preference` / `latest`），
-  让前端能解释"为什么选中这个版本"（§9：不静默替用户做决定）。
+  让渲染进程能解释"为什么选中这个版本"（§14：不静默替用户做决定）。
 
 若选中版本处于翻译中 → 切换为事件流，边翻边显示。
 
@@ -571,7 +571,7 @@ completed        { version, output }
 ### 7.1 职责
 
 > **主进程 = 纯内容服务**（沿用 v1.0 定位）：提供 PDF / MD / 图片 / 版本列表的读取；
-> 执行解析与翻译。**不管理前端锚点**（§5.3）。
+> 执行解析与翻译。**不管理渲染进程锚点**（§5.3）。
 
 两条硬约束：
 
@@ -599,9 +599,8 @@ completed        { version, output }
 |------|----------------|
 | `workspace:list` | `GET /api/workspaces` |
 | `workspace:tree` | `GET /api/workspaces/:id/tree` |
-| `file:read` | `GET /api/files?path=` |
+| `file:read` | `GET /api/files?path=` —— **同时用于读译文 `.md` 与图片** |
 | `paper:versions` | `GET /api/papers/:id/versions` |
-| `paper:content` | `GET /api/papers/:id/content?version=` |
 | （待实现）`paper:translate` | `POST /api/papers/:id/translate` |
 | （待实现）`models:list` | `GET /api/models` |
 | （待实现）`glossary:get` / `glossary:put` | `GET` / `PUT /api/workspaces/:id/glossary` |
@@ -624,7 +623,7 @@ completed        { version, output }
 
 1. **符号链接**必须解析为真实路径后再比对 —— 符号链接是目录穿越的经典绕过手段。
 2. **前缀比较要补上路径分隔符** —— 否则 `/data/root_other` 会被误判为 `/data/root` 的子路径。
-3. **中文根缺失只标记、不创建**（L2），由前端提示具体路径。
+3. **中文根缺失只标记、不创建**（L2），由渲染进程提示具体路径。
 
 ### 7.6 翻译编排（待实现）
 
@@ -703,7 +702,7 @@ completed        { version, output }
    → 仅移除 DOM 不回收，必须先把 canvas 宽高置零；
    → 配合虚拟滚动（只渲染视口附近的页），内存与论文总页数无关。
 
-### 8.2 对照阅读核心：`syncScroll.ts`
+### 8.3 对照阅读核心：滚动同步（待实现）
 
 ```ts
 // 核心：以 page 为锚点，非像素比例
@@ -721,83 +720,30 @@ export function usePageAnchoredSyncScroll(
 }
 ```
 
-### 8.3 渐进渲染：SSE 消费
+### 8.4 渐进渲染：翻译事件消费（待实现）
 
-```ts
-// lib/api.ts
-export function streamTranslate(
-  paperId: string, model: string,
-  onBlock: (b: Block) => void,
-  onGlossary: (g: GlossaryEntry) => void,
-  onDone: () => void
-) {
-  const es = new EventSource(`/api/papers/${paperId}/translate?model=${model}`);
-  es.addEventListener('block_translated', e => onBlock(JSON.parse(e.data)));
-  es.addEventListener('glossary_hit',   e => onGlossary(JSON.parse(e.data)));
-  es.addEventListener('completed',       () => { onDone(); es.close(); });
-  return es;
-}
-```
+> **v1.1**：原 `EventSource`（HTTP + SSE）已废弃。
+> 翻译由主进程执行，经 **IPC 事件**推送到渲染进程，不经过 HTTP。
 
-### 8.4 前后端共享类型（`lib/types.ts` ↔ Go `internal/model`）
+契约形态（**具体事件字段待实现时确定**）：
 
-```ts
-export type BlockType =
-  | 'text' | 'title' | 'heading'
-  | 'interline_equation' | 'display_equation'
-  | 'table' | 'image' | 'reference'
-  | 'figure_caption' | 'table_caption';
+- 主进程逐 block 推送翻译结果，渲染进程增量渲染到对应页。
+- 术语命中同样以事件告知，供界面提示"已锁定术语"。
+- 结束事件触发整篇译文落盘后的重新加载。
 
-export interface Block {
-  id: string;
-  type: BlockType;
-  bbox?: [number, number, number, number];
-  reading_order: number;
-  en: string;
-  zh: string | null;
-  status: 'pending' | 'translated' | 'preserved' | 'error';
-  do_not_translate: boolean;
-}
+> 事件结构不做预先冻结 —— 翻译功能动手实现时再定，避免过早约束。
 
-export interface Page {
-  page_idx: number;
-  blocks: Block[];
-}
+### 8.5 共享类型
 
-export interface Anchor {
-  en_page: number;
-  en_offset: number;
-  zh_page: number;
-  zh_offset: number;
-}
+主进程与渲染进程**共用同一份 TS 类型**（`src/shared/types.ts`），
+两个进程在同一 TS 工程内，**契约变更会在编译期暴露**。
 
-export interface GlossaryEntry {
-  en: string;
-  zh: string;
-  count: number;
-  confirmed: boolean;
-  source: 'extracted' | 'user';
-}
+> 这消掉了 v1.0 里"Go struct tag ↔ TS 类型手写对齐"的那类隐患。
 
-export interface Paper {
-  id: string;
-  model: string;
-  source_pdf: string;
-  workspace_id: string;
-  pages: Page[];
-  glossary: GlossaryEntry[];
-  // 跨页对齐（内容，来自 MD/blocks，后端提供，前端只读）
-  page_boundaries: Array<{ page: number; en_offset: number; zh_offset: number }>;
-}
+已落地的类型：`WorkspaceConfig` / `WorkspaceState` / `TreeNode` / `PaperVersion`。
 
-export interface Version {
-  id: string;            // 模型后缀
-  model: string;         // 完整模型名
-  created_at: string;
-  status: 'pending' | 'translating' | 'done' | 'error';
-  progress?: number;     // 0~1，生成中
-}
-```
+**翻译相关的数据结构**（Block / Page / GlossaryEntry / 对齐锚点）见 **§9 数据契约**，
+实现时以 `shared/types.ts` 为准，此处不重复罗列。
 
 ---
 
@@ -841,7 +787,8 @@ export interface Version {
 }
 ```
 
-> 前端对照阅读**只读此文件 + 左侧 PDF `file://`**。跨页对齐 `page_boundaries` 与译文 blocks 合二为一。
+> 渲染进程对照阅读**只读此文件 + 左侧 PDF（均经 IPC 读取，§5.2）**。
+> 跨页对齐 `page_boundaries` 与译文 blocks 合二为一。
 
 ---
 
@@ -891,23 +838,36 @@ translated/_workspace/
 - MinerU `middle.json` → 转换为我们的 `blocks_{model}.json`（page + block + 类型过滤 + glossary 抽取）。
 - 原始产物放在 `translated/foo/_cache/parse_mineru/`。
 
-### 11.3 Go 调用方式
+### 11.3 主进程调用方式
 
-- **P0**：Go `exec.Command` 串行调用 `magic-pdf`（16GB 顺序执行，不并行）。
-- **P2**：如需并发 / 更解耦 → 拆 Python 解析微服务（FastAPI），Go 经 HTTP 调用。
+- **P0**：主进程 `child_process` 串行调用 `magic-pdf`（16GB 顺序执行，不并行）。
+- **P2**：如需并发 / 更解耦 → 拆 Python 解析微服务（FastAPI），主进程经 HTTP 调用。
+
+> 子进程必须在应用退出时回收（§7.6），否则会成为孤儿进程继续占用内存。
 
 ---
 
 ## 12. P0 落地清单（实现阶段）
 
-1. 工作区管理（多工作区、`source/translated` 镜像、懒校验、缺失报错）【Go】
-2. PDF 解析（MinerU → blocks.json，类型过滤）【Go + Python】
-3. 顺序翻译（Ollama qwen2.5:7b，SSE 逐 block）【Go】
-4. 对照阅读（Next.js 左右分栏 + page 锚点同步滚动 + 悬浮版本选择器）【Next.js】
-5. 术语表（工作区级 glossary.json，翻译前注入，实时更新）【Go + UI】
-6. 版本管理（下拉 + 新增 + 空态 + 二次确认 + 覆盖备份）【Next.js + Go】
-7. 锚点微调（localStorage，停 300ms / 转滚右侧 落定）【Next.js】
-8. 中间记忆落盘（blocks.json 就近存 translated 对应目录，断点续传）
+**已完成（v1.1 当前状态）**
+
+| # | 项 | 位置 |
+|---|-----|------|
+| 1 | 工作区管理（多工作区、镜像、懒校验、中文根缺失报错） | 主进程 + 渲染进程 |
+| 4' | 对照阅读（三栏：目录树 / PDF 原文 / 译文，含虚拟滚动与切页对齐） | 渲染进程 |
+| 6' | 版本列表与切换（悬浮选择器，默认取最新） | 主进程 + 渲染进程 |
+
+**待实现（按此顺序推进）**
+
+| # | 项 | 位置 |
+|---|-----|------|
+| 2 | PDF 解析（MinerU → blocks.json，类型过滤） | 主进程 + Python |
+| 3 | 顺序翻译（Ollama qwen2.5:7b，逐 block 事件推送） | 主进程 |
+| 5 | 术语表（工作区级 glossary.json，翻译前注入，实时更新） | 主进程 + 渲染进程 |
+| 6'' | 版本管理（新增 + 二次确认 + 覆盖备份） | 主进程 + 渲染进程 |
+| 7 | 滚动同步与锚点微调（localStorage 存微调） | 渲染进程 |
+| 8 | 中间记忆落盘（blocks.json 就近存 translated 对应目录，断点续传） | 主进程 |
+| 9 | 子进程回收（退出时 kill 进程树） | 主进程 |
 
 ---
 
@@ -922,13 +882,13 @@ translated/_workspace/
 | 5 | 目录镜像同名（L4）；产物带 `_{模型/工具}` 后缀（L5）；`_cache` 非隐藏（L6） |
 | 6 | 译文 `<!-- page: N -->` 分段，**一页对一页** |
 | 7 | title / heading / caption / equation / table / image / reference **不翻**；正文翻 |
-| 8 | **跨页对齐 = 内容（blocks.json / MD），后端提供，不存前端** |
+| 8 | **跨页对齐 = 内容（blocks.json / MD），主进程提供，不存渲染进程** |
 | 9 | **单页内微调锚点 = localStorage**，落定 = 停 300ms 或转滚右侧 |
 | 10 | 跟随：跨页硬跳，页内插值，`isSyncing` 防循环 |
-| 11 | 后端 Go（内容服务）；前端 Next.js + TS + Tailwind；PDF 先 `file://`（实测定代理） |
+| 11 | 主进程 = 内容服务（Electron）；渲染进程 = React + TS + Tailwind v4；文件读取**统一走 IPC** |
 | 12 | 版本选择器**悬浮内容区右上角**，不占顶部；偏好 → 最新 → 空态 |
 | 13 | 覆盖策略 = **A（同名覆盖 + 自动备份 N=1）**；重翻前二次确认 |
-| 14 | Agent 接口预埋（P0 Sequential → P2 LangGraph），SSE 契约不变 |
+| 14 | Agent 接口预埋（P0 Sequential → P2 LangGraph），事件流契约不变 |
 | 15 | 术语作用域 = 工作区；初期 JSON，P2 可升向量库 |
 
 ---
