@@ -208,7 +208,6 @@ export default function App() {
 											depth={1}
 											ws={ws}
 											cur={curPaper}
-											onToggle={toggle}
 											onPick={(w, p) => void pick(w, p)}
 										/>
 									))}
@@ -302,14 +301,12 @@ function Node({
 	depth,
 	ws,
 	cur,
-	onToggle,
 	onPick
 }: {
 	node: TreeNode
 	depth: number
 	ws: WorkspaceState
 	cur: TreeNode | null
-	onToggle: (key: string) => void
 	onPick: (ws: WorkspaceState, node: TreeNode) => void
 }) {
 	const [open, setOpen] = useState(depth <= DEFAULT_EXPAND_DEPTH)
@@ -338,7 +335,6 @@ function Node({
 								depth={depth + 1}
 								ws={ws}
 								cur={cur}
-								onToggle={onToggle}
 								onPick={onPick}
 							/>
 						))}

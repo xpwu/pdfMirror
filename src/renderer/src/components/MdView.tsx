@@ -74,9 +74,9 @@ function Img({ src, alt }: { src?: string; alt?: string }) {
 	const [showPath, setShowPath] = useState(false)
 
 	const abs = useMemo(() => {
-		// mdAbsPath 由父级通过 context 注入式传入（见下方 components 配置）
+		// mdAbsPath 由下方的 MdPathRef 传入
 		const base = MdPathRef.value
-		if (!src || base === "") return src ? "" : ""
+		if (!src || base === "") return ""
 		return ResolveImagePath(base, src)
 	}, [src])
 
