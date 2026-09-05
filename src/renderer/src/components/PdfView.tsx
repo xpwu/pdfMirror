@@ -5,7 +5,6 @@ import { ReadFile } from "@/api/file"
 import { OpenDocument } from "@/lib/pdfLoader"
 import { TrackPage, UntrackAll, UntrackPage } from "@/lib/bitmapMem"
 
-
 const DEFAULT_SCALE = 1.25
 const SCALES = [0.75, 1, 1.25, 1.5, 2]
 const MAX_DPR = 2
@@ -20,12 +19,10 @@ function log(msg: string): void {
 	if (DEBUG) console.log(`[PdfView] ${msg}`)
 }
 
-
 interface PageSize {
 	w: number
 	h: number
 }
-
 
 export default function PdfView({
 	absPath,
@@ -60,8 +57,6 @@ export default function PdfView({
 	const [sizes, setSizes] = useState<PageSize[]>([])
 	const [scale, setScale] = useState(DEFAULT_SCALE)
 	const [err, setErr] = useState<string>("")
-	const [loading, setLoading] = useState(false)
-
 
 	const offsets = useMemo(() => {
 		const arr: number[] = [0]
@@ -78,7 +73,6 @@ export default function PdfView({
 		const last = offsets[offsets.length - 1]
 		return last + sizes[sizes.length - 1].h + PAGE_GAP
 	}, [sizes, offsets])
-
 
 	// releaseAll 释放当前所有位图并取消所有在途任务。
 	//
@@ -114,7 +108,6 @@ export default function PdfView({
 		log(`releaseAll：位图归零，剩余 ${document.querySelectorAll("canvas").length} 个 canvas`)
 	}, [])
 
-
 	const destroyPage = useCallback((i: number) => {
 		const task = tasksRef.current.get(i)
 		if (task !== undefined) {
@@ -139,7 +132,6 @@ export default function PdfView({
 		renderedRef.current.delete(i)
 		UntrackPage(i)
 	}, [])
-
 
 	const renderPage = useCallback(
 		async (i: number) => {
@@ -199,7 +191,7 @@ export default function PdfView({
 					return
 				}
 
-				const task = page.render({ canvasContext: ctx, viewport })
+				const task = page.render({ canvas, viewport })
 				tasksRef.current.set(i, task)
 
 				await task.promise
@@ -223,7 +215,6 @@ export default function PdfView({
 		},
 		[scale]
 	)
-
 
 	const renderVisible = useCallback(() => {
 		const el = scrollRef.current
@@ -268,7 +259,6 @@ export default function PdfView({
 		}
 	}, [sizes, offsets, renderPage, destroyPage])
 
-
 	// ── 加载文档 ──
 	useEffect(() => {
 		const id = ++reqRef.current
@@ -280,7 +270,6 @@ export default function PdfView({
 		setErr("")
 		setSizes([])
 		setDoc(null)
-		setLoading(true)
 
 		// 注意：这里不再做清理。
 		//
@@ -294,7 +283,6 @@ export default function PdfView({
 
 			if (e !== null) {
 				setErr(e)
-				setLoading(false)
 				return
 			}
 
@@ -304,7 +292,6 @@ export default function PdfView({
 			} catch (ex) {
 				if (!cancelled && id === reqRef.current) {
 					setErr(String(ex))
-					setLoading(false)
 				}
 				return
 			}
@@ -334,7 +321,6 @@ export default function PdfView({
 
 			setSizes(list)
 			setDoc(opened)
-			setLoading(false)
 			onPageCount?.(list.length)
 			log(`id=${id} gen=${gen} 就绪 ${opened.numPages} 页`)
 		}
@@ -357,7 +343,6 @@ export default function PdfView({
 		// onPageCount 由父级传入，加入依赖避免闭包拿到旧函数
 	}, [absPath, releaseAll, onPageCount])
 
-
 	// ── 缩放变化：尺寸失效，清空重来 ──
 	useEffect(() => {
 		const d = doc
@@ -368,6 +353,9 @@ export default function PdfView({
 		releaseAll()
 
 		async function recalc(): Promise<void> {
+			// d 来自闭包，异步期间 TS 会判定其可能为 null
+			if (d === null) return
+
 			const list: PageSize[] = []
 			for (let i = 1; i <= d.numPages; i++) {
 				if (cancelled || docRef.current !== d) return
@@ -398,7 +386,6 @@ export default function PdfView({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [doc, scale])
 
-
 	useEffect(() => {
 		if (doc === null || sizes.length === 0) return
 
@@ -424,7 +411,6 @@ export default function PdfView({
 		}
 	}, [doc, sizes, renderVisible])
 
-
 	useEffect(() => {
 		return () => {
 			releaseAll()
@@ -433,7 +419,6 @@ export default function PdfView({
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [])
-
 
 	return (
 		<div className="flex flex-col h-full">

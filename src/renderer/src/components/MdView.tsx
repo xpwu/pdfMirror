@@ -95,8 +95,14 @@ function Img({ src, alt }: { src?: string; alt?: string }) {
 				return
 			}
 
+			// TS 5.7 起 Uint8Array 带 ArrayBufferLike 泛型，
+			// 可能指向 SharedArrayBuffer，不能直接当 BlobPart。
+			// 复制到明确的 ArrayBuffer 再构造 Blob。
+			const buf = new ArrayBuffer(bytes.byteLength)
+			new Uint8Array(buf).set(bytes)
+
 			blobUrl = URL.createObjectURL(
-				new Blob([bytes], { type: GuessMime(abs) })
+				new Blob([buf], { type: GuessMime(abs) })
 			)
 			setUrl(blobUrl)
 		})

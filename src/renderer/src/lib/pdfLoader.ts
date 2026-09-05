@@ -71,6 +71,32 @@ function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
 }
 
 
+// destroyDoc 销毁文档，兼容不同版本的 pdf.js。
+//
+// 各版本的销毁方法名不一致：新版为 destroy()，旧版只有 cleanup()，
+// 部分版本的类型定义还可能漏掉 destroy 的声明。
+// 这里做运行时探测而非依赖类型声明，避免版本差异导致编译失败。
+async function destroyDoc(d: pdfjs.PDFDocumentProxy): Promise<void> {
+	const anyD = d as unknown as {
+		destroy?: () => Promise<void> | void
+		cleanup?: () => Promise<void> | void
+	}
+
+	try {
+		if (typeof anyD.destroy === "function") {
+			await anyD.destroy()
+			return
+		}
+
+		if (typeof anyD.cleanup === "function") {
+			await anyD.cleanup()
+		}
+	} catch {
+		// 销毁失败不阻塞后续加载
+	}
+}
+
+
 // OpenDocument 打开一份 PDF。
 //
 // 会先彻底销毁上一份文档，再打开新的 —— 全程串行，无并发。
@@ -79,11 +105,7 @@ export function OpenDocument(
 ): Promise<pdfjs.PDFDocumentProxy> {
 	return enqueue(async () => {
 		if (current !== null) {
-			try {
-				await current.destroy()
-			} catch {
-				// 销毁失败不阻塞后续加载
-			}
+			await destroyDoc(current)
 			current = null
 		}
 
@@ -107,12 +129,7 @@ export function CloseDocument(): Promise<void> {
 	return enqueue(async () => {
 		if (current === null) return
 
-		try {
-			await current.destroy()
-		} catch {
-			// 忽略
-		}
-
+		await destroyDoc(current)
 		current = null
 	})
 }

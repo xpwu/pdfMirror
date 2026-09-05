@@ -1,4 +1,4 @@
-import { ClassArray, Json } from "ts-json"
+import { ClassArray } from "ts-json"
 
 import { GetPaper, Paper as DBPaper, SetPaper } from "@/db/paper"
 
@@ -58,11 +58,6 @@ function normalize(list: PaperVersion[] | null | undefined): PaperVersion[] {
 	const out = new ClassArray(PaperVersion) as PaperVersion[]
 
 	for (const v of list ?? []) {
-		if (v instanceof PaperVersion) {
-			out.push(v)
-			continue
-		}
-
 		const t = new PaperVersion()
 		t.Model = v?.Model ?? ""
 		t.MdRelPath = v?.MdRelPath ?? ""

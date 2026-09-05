@@ -42,12 +42,6 @@ function normalize(nodes: TreeNode[] | null | undefined): TreeNode[] {
 	const out = new ClassArray(TreeNode) as TreeNode[]
 
 	for (const n of nodes ?? []) {
-		if (n instanceof TreeNode) {
-			n.Children = normalize(n.Children)
-			out.push(n)
-			continue
-		}
-
 		const t = new TreeNode()
 		t.Name = n?.Name ?? ""
 		t.Rel = n?.Rel ?? ""
