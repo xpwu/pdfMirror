@@ -1,39 +1,51 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
+import path from "path-browserify"
 
 import { WorkspaceList } from "@/api/workspace"
 import { GetWorkspaces } from "@/db/workspace"
 import { WorkspaceTree } from "@/api/tree"
 import { GetTree } from "@/db/tree"
+import { PaperVersions, LoadTranslation } from "@/api/paper"
+import { GetPaper } from "@/db/paper"
 
+import MemoryBar from "@/components/MemoryBar"
 import PdfView from "@/components/PdfView"
-import MemoryBar from "@/components/MemoryBar";
-import { TreeNode, WorkspaceState } from "../../shared/types"
+import MdView from "@/components/MdView"
+import VersionFloat from "@/components/VersionFloat"
+
+import {
+	PaperVersion,
+	TreeNode,
+	WorkspaceState
+} from "../../shared/types"
 
 
-// 目录默认展开到第几层。
-//
-// 层级编号：工作区为 0，其下的目录/文件为 1，依此类推。
-// 目录节点的 depth 小于等于此值时默认展开，更深的默认折叠。
-// 设 1 表示：展开工作区后，第一层目录也展开，可直接看到其中的 PDF。
+// 目录默认展开到第几层：工作区为 0，其下目录/文件为 1。
+// 设为 1 表示展开工作区后，第一层目录也展开，可直接看到 PDF。
 const DEFAULT_EXPAND_DEPTH = 1
 
 
-// 骨架页面：左栏目录/文件树，中栏原文，右栏译文。
-//
-// 左栏选中哪个文件，中栏就显示它的原文，右栏显示它的译文。
-// 三组数据一一对应，没有中间层。
 export default function App() {
 	const [wss, setWss] = useState<WorkspaceState[]>([])
 	const [wsErr, setWsErr] = useState<string>("")
 
-	// 每个工作区的树，key 为 SourceRoot
 	const [trees, setTrees] = useState<Record<string, TreeNode[]>>({})
-
-	// 展开的节点，key 见 nodeKey
 	const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
 	const [curWs, setCurWs] = useState<WorkspaceState | null>(null)
 	const [curPaper, setCurPaper] = useState<TreeNode | null>(null)
+
+	// 原文路径与页数
+	const [sourcePath, setSourcePath] = useState("")
+	const [pdfPages, setPdfPages] = useState(0)
+
+	// 译文
+	const [versions, setVersions] = useState<PaperVersion[]>([])
+	const [curModel, setCurModel] = useState("")
+	const [md, setMd] = useState("")
+	const [mdAbsPath, setMdAbsPath] = useState("")
+	const [transErr, setTransErr] = useState("")
+
 
 	useEffect(() => {
 		WorkspaceList()
@@ -45,9 +57,6 @@ export default function App() {
 
 				const list = GetWorkspaces().Workspaces
 				setWss(list)
-
-				// 工作区默认展开，故初始即加载各工作区的树。
-				// 本地场景工作区数量很少，全量加载代价可忽略。
 				setExpanded(new Set(list.map((w) => wsKey(w))))
 				void loadTrees(list)
 			})
@@ -59,9 +68,7 @@ export default function App() {
 				.filter((w) => w.SourceExists)
 				.map(async (w) => {
 					const e = await WorkspaceTree(w.Config.SourceRoot)
-					if (e !== null) {
-						return
-					}
+					if (e !== null) return
 
 					const t = GetTree()
 					setTrees((prev) => ({
@@ -75,29 +82,88 @@ export default function App() {
 	function toggle(key: string): void {
 		setExpanded((prev) => {
 			const next = new Set(prev)
-			if (next.has(key)) {
-				next.delete(key)
-			} else {
-				next.add(key)
-			}
+			if (next.has(key)) next.delete(key)
+			else next.add(key)
 			return next
 		})
 	}
 
-	function pick(ws: WorkspaceState, paper: TreeNode): void {
-		setCurWs(ws)
-		setCurPaper(paper)
+	// resetTrans 清空译文相关状态
+	function resetTrans(): void {
+		setVersions([])
+		setCurModel("")
+		setMd("")
+		setMdAbsPath("")
+		setTransErr("")
 	}
 
-	// 原文与译文的完整路径，供 pm:// 协议读取
-	const sourcePath =
-		curWs !== null && curPaper !== null
-			? `${curWs.Config.SourceRoot}/${curPaper.Rel}`
-			: ""
+	const onPageCount = useCallback((n: number) => {
+		setPdfPages(n)
+	}, [])
+
+	async function pick(ws: WorkspaceState, paper: TreeNode): Promise<void> {
+		setCurWs(ws)
+		setCurPaper(paper)
+		setSourcePath(`${ws.Config.SourceRoot}/${paper.Rel}`)
+		setPdfPages(0)
+		resetTrans()
+
+		// 中文根不存在：错误显示在译文区（用户决策 3）
+		if (!ws.TranslatedExists) return
+
+		const e = await PaperVersions(ws.Config.SourceRoot, paper.Rel)
+		if (e !== null) {
+			setTransErr(e.message)
+			return
+		}
+
+		const p = GetPaper()
+
+		// 论文已切换则丢弃这次结果
+		if (p.Rel !== paper.Rel) return
+
+		if (p.Versions.length === 0) return
+
+		setVersions(p.Versions)
+
+		// 默认选最近修改的（列表已按 ModifiedAt 倒序）
+		await loadVersion(ws, paper, p.Versions[0])
+	}
+
+	async function loadVersion(
+		ws: WorkspaceState,
+		paper: TreeNode,
+		v: PaperVersion
+	): Promise<void> {
+		// 译文绝对路径：中文根 + rel 去扩展名 + 文件名
+		const rel = paper.Rel
+		const ext = path.posix.extname(rel)
+		const dirRel = rel.slice(0, rel.length - ext.length)
+
+		const abs = path.posix.join(
+			ws.TranslatedRoot,
+			dirRel,
+			v.FileName
+		)
+
+		const e = await LoadTranslation(abs, v.Model)
+		if (e !== null) {
+			setTransErr(e.message)
+			return
+		}
+
+		if (curPaper?.Rel !== paper.Rel) return
+
+		setCurModel(v.Model)
+		setMd(GetPaper().Content)
+		setMdAbsPath(abs)
+		setTransErr("")
+	}
 
 	return (
 		<div className="flex h-screen text-sm">
 			<MemoryBar />
+
 			{/* ── 左栏：目录 / 文件树 ── */}
 			<aside className="w-64 shrink-0 border-r overflow-y-auto p-2">
 				<div className="font-semibold px-1 pb-2">工作区</div>
@@ -126,7 +192,7 @@ export default function App() {
 								{!ws.TranslatedExists && (
 									<span
 										className="text-amber-600 shrink-0"
-										title={`中文根不存在：${ws.Config.TranslatedRoot}`}
+										title={`中文根不存在：${ws.TranslatedRoot}`}
 									>
 										⚠
 									</span>
@@ -143,7 +209,7 @@ export default function App() {
 											ws={ws}
 											cur={curPaper}
 											onToggle={toggle}
-											onPick={pick}
+											onPick={(w, p) => void pick(w, p)}
 										/>
 									))}
 								</ul>
@@ -158,62 +224,79 @@ export default function App() {
 				{curPaper === null ? (
 					<p className="text-xs opacity-60 p-4">请从左侧选择一篇论文</p>
 				) : (
-					<PdfView absPath={sourcePath} />
+					<PdfView absPath={sourcePath} onPageCount={onPageCount} />
 				)}
 			</section>
 
 			{/* ── 右栏：译文 ── */}
 			<section className="flex-1 min-w-0 relative border-l overflow-hidden">
-				{/* 版本选择器：悬浮右上角，不占顶部高度。
-				    放在滚动容器之外，故不会随内容滚动。 */}
-				{curPaper?.HasTranslated === true && (
-					<div className="absolute top-3 right-3 z-10">
-						<button className="rounded border bg-white/90 px-2 py-1 text-xs shadow backdrop-blur">
-							版本 ▾
-						</button>
+				<VersionFloat
+					versions={versions}
+					cur={curModel}
+					onPick={(m) => {
+						const v = versions.find((x) => x.Model === m)
+						if (v === undefined || curWs === null || curPaper === null)
+							return
+						void loadVersion(curWs, curPaper, v)
+					}}
+				/>
+
+				{curPaper === null && (
+					<div className="p-4 text-xs opacity-60">
+						请从左侧选择一篇论文
 					</div>
 				)}
 
-				<div className="h-full overflow-y-auto p-4">
-					{curWs?.TranslatedExists === false && (
-						<p className="text-xs text-amber-600 mb-3">
-							中文根不存在，请在磁盘上创建 {curWs.Config.TranslatedRoot}
-						</p>
+				{curPaper !== null && curWs !== null && !curWs.TranslatedExists && (
+					<div className="p-4 text-xs text-amber-700">
+						中文根不存在，请在磁盘上创建：
+						<div className="mt-1 font-mono break-all">
+							{curWs.TranslatedRoot}
+						</div>
+					</div>
+				)}
+
+				{curPaper !== null &&
+					curWs?.TranslatedExists === true &&
+					transErr !== "" && (
+						<div className="p-4 text-xs text-red-600 break-all">
+							{transErr}
+						</div>
 					)}
 
-					{curPaper === null && (
-						<p className="text-xs opacity-60">请从左侧选择一篇论文</p>
-					)}
-
-					{curPaper !== null && !curPaper.HasTranslated && (
-						<div className="flex flex-col gap-2">
+				{curPaper !== null &&
+					curWs?.TranslatedExists === true &&
+					transErr === "" &&
+					versions.length === 0 && (
+						<div className="p-4 flex flex-col gap-2">
 							<div className="font-semibold">{curPaper.Name}</div>
-							<p className="text-xs opacity-60">还没有译文</p>
+							<p className="text-xs opacity-60">还没有翻译内容</p>
 							<button
-								className="self-start rounded bg-blue-600 px-3 py-1 text-xs text-white"
-								disabled={curWs?.TranslatedExists === false}
+								className="self-start text-xs text-blue-600"
+								title="翻译功能开发中"
 							>
 								马上翻译
 							</button>
 						</div>
 					)}
 
-					{curPaper !== null && curPaper.HasTranslated && (
-						<div className="text-xs opacity-60">
-							译文渲染待接入（按 &lt;!-- page:N --&gt; 切页）
-						</div>
+				{curPaper !== null &&
+					curWs?.TranslatedExists === true &&
+					transErr === "" &&
+					versions.length > 0 &&
+					md !== "" && (
+						<MdView
+							md={md}
+							mdAbsPath={mdAbsPath}
+							pdfPages={pdfPages}
+						/>
 					)}
-				</div>
 			</section>
 		</div>
 	)
 }
 
 
-// Node 递归渲染树的一个节点。
-//
-// 目录可折叠，文件可点选。两者混排，一直显示到文件。
-// 目录的展开状态由组件自身持有，初始展开深度见 DEFAULT_EXPAND_DEPTH。
 function Node({
 	node,
 	depth,
@@ -231,7 +314,8 @@ function Node({
 }) {
 	const [open, setOpen] = useState(depth <= DEFAULT_EXPAND_DEPTH)
 
-	const selected = cur !== null && cur.Rel === node.Rel && cur.Name === node.Name
+	const selected =
+		cur !== null && cur.Rel === node.Rel && cur.Name === node.Name
 
 	if (node.IsDir) {
 		return (
@@ -283,7 +367,6 @@ function Node({
 }
 
 
-// wsKey 工作区节点的展开状态 key
 function wsKey(ws: WorkspaceState): string {
 	return `ws:${ws.Config.SourceRoot}`
 }

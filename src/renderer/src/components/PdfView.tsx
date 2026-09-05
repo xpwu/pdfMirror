@@ -27,7 +27,17 @@ interface PageSize {
 }
 
 
-export default function PdfView({ absPath }: { absPath: string }) {
+export default function PdfView({
+	absPath,
+	onPageCount
+}: {
+	absPath: string
+	// 页数变化时通知父级。
+	//
+	// 右栏需要知道原文页数，才能判断译文是否超出、
+	// 从而决定是否启用逐页联动。
+	onPageCount?: (n: number) => void
+}) {
 	const scrollRef = useRef<HTMLDivElement>(null)
 	const wrappersRef = useRef<(HTMLDivElement | null)[]>([])
 	const renderedRef = useRef<Set<number>>(new Set())
@@ -325,6 +335,7 @@ export default function PdfView({ absPath }: { absPath: string }) {
 			setSizes(list)
 			setDoc(opened)
 			setLoading(false)
+			onPageCount?.(list.length)
 			log(`id=${id} gen=${gen} 就绪 ${opened.numPages} 页`)
 		}
 
@@ -343,7 +354,8 @@ export default function PdfView({ absPath }: { absPath: string }) {
 
 			log(`id=${id} gen=${gen} cleanup：已释放全部位图与任务`)
 		}
-	}, [absPath, releaseAll])
+		// onPageCount 由父级传入，加入依赖避免闭包拿到旧函数
+	}, [absPath, releaseAll, onPageCount])
 
 
 	// ── 缩放变化：尺寸失效，清空重来 ──
@@ -375,6 +387,7 @@ export default function PdfView({ absPath }: { absPath: string }) {
 
 			if (cancelled || docRef.current !== d) return
 			setSizes(list)
+			onPageCount?.(list.length)
 		}
 
 		void recalc()

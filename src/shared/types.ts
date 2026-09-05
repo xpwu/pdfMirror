@@ -14,6 +14,7 @@ export type IPCResult<T> = [T, IPCError]
 // 工作区配置，即数据库 workspaces.json 里的一条记录。
 //
 // SourceRoot 是英文根，同时作为工作区的唯一 id（本机路径唯一）。
+// TranslatedRoot 可留空：按默认规则从 SourceRoot 推导（见 ResolveTranslatedRoot）。
 export class WorkspaceConfig {
 	SourceRoot: string = ""
 	TranslatedRoot: string = ""
@@ -34,6 +35,12 @@ export class WorkspaceState {
 	// 中文根是否存在。false 时前端显示引导，由用户自己在磁盘上创建。
 	// 程序绝不自动创建 —— 这是铁律 L2。
 	TranslatedExists: boolean = false
+
+	// 实际使用的中文根。
+	//
+	// 可能来自配置，也可能由默认规则推导，
+	// 前端展示错误信息时需要给出这个具体路径。
+	TranslatedRoot: string = ""
 }
 
 
@@ -41,20 +48,30 @@ export class WorkspaceState {
 //
 // IsDir 为 true 时 Children 非空；为 false 时是 PDF 文件。
 export class TreeNode {
-	// 目录名或文件名（含扩展名）
 	Name: string = ""
-
-	// 相对英文根的路径，如 "nlp/bert.pdf"。
-	// 同时作为前端的 key，以及构造译文路径的依据。
 	Rel: string = ""
-
 	IsDir: boolean = false
 
-	// 是否已有译文。仅对 PDF 有意义，目录恒为 false。
+	// 是否已有译文：中文根下对应目录内存在至少一个 paper_*.md。
 	//
-	// 判定依据：中文根 + Rel 去掉扩展名 的目录是否存在。
-	// 对应目录镜像规则 source/foo.pdf <-> translated/foo/
+	// 「目录存在」不等于「有译文」—— 目录里可能只有 _cache，
+	// 或翻译中途失败只留下了中间产物。
 	HasTranslated: boolean = false
 
 	Children: TreeNode[] = []
+}
+
+
+// 一篇译文版本。
+//
+// 版本即模型：同一篇论文可有多篇译文，文件名 paper_{suffix}.md，
+// suffix 由模型名按 §3.3 的规则转义而来（如 qwen2.5:7b -> qwen2_5_7b）。
+//
+// 转义不可逆（无法区分哪个 _ 原本是 . 哪个是 :），
+// 因此展示名直接用 suffix，完整文件名在 MdAbsPath 中。
+export class PaperVersion {
+	Model: string = ""
+	MdRelPath: string = ""   // 相对中文根
+	FileName: string = ""    // paper_xxx.md
+	ModifiedAt: number = 0   // 毫秒时间戳，用于默认选中
 }
